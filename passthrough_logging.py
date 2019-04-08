@@ -48,6 +48,7 @@ TABLES = [
      
 
 LOGGERS = {
+<<<<<<< HEAD
     "call": ("INSERT INTO func_calls (call, kwargs, retval) VALUES (%s, %s, %s, %s, %s)",
              ('_call', 'kwargs', 'retval')),
     "read": ("INSERT INTO reads (path, length, offset, buffer_length, buffer_hash) VALUES (%s, %s, %s, %s, %s)",
@@ -56,12 +57,13 @@ LOGGERS = {
               ('path', 'offset', 'buffer_length', 'buffer_hash'))
 }
 
+
 def log_init(logfnm, logdb):
     global LOG_FILE
     global LOG_DB
     if logfnm:
         if not os.path.exists(logfnm):
-            LOGFILE = open(logfnm, 'w')
+            LOG_FILE = open(logfnm, 'w')
         else:
             LOGFILE = open(logfnm, 'a')
     LOG_FILE.write("\n\n########################\n# Starting run at %s\n#########################\n\n" % time.time())
@@ -70,7 +72,7 @@ def log_init(logfnm, logdb):
         conn = sqlite3.connect(logdb)
         LOG_DB = conn.cursor()
         for table in TABLES:
-            LOGDB.execute(table)
+            LOG_DB.execute(table)
 
 
 def log(info):
@@ -249,11 +251,11 @@ class Passthrough(Operations):
         return self.flush(path, fh)
 
 
-def main(mountpoint, root):
-    FUSE(Passthrough(root), mountpoint, nothreads=True, foreground=True)
+def main(mount_point, root):
+    FUSE(Passthrough(root), mount_point, nothreads=True, foreground=True)
+
 
 if __name__ == '__main__':
-    import argparse
     argp = argparse.ArgumentParser()
     argp.add_argument('-m', '--mountpoint', help="Mountpoint to use")
     argp.add_argument('-r', '--root', help="Root to mount at mountpoint")
