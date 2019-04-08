@@ -9,12 +9,13 @@ import errno
 import sqlite3
 import marshal
 import json
+import time
 from hashlib import sha256
 
 from fuse import FUSE, FuseOSError, Operations
 
-LOGFILE = None
-LOGDB = None
+LOG_FILE = None
+LOG_DB = None
 LOG_CALLS = set()
 LOG_ALL = False
 
@@ -47,63 +48,64 @@ TABLES = [
      
 
 LOGGERS = {
-    "call": ("INSERT INTO func_calls (call, args, kwargs, retval) VALUES (%s, %s, %s, %s, %s)", ('ts', 'call', 'args, 'kwargs', 'retval')),
-    "read": ("INSERT INTO reads (path, length, offset, buffer_length, buffer_hash) VALUES (%s, %s, %s, %s, %s)", ('path, 'length', 'offset', 'buffer_length', 'buffer_hash')),
-    "write": ("INSERT INTO writes (path, offset, buffer_length, buffer_hash) VALUES (%s, %s, %s, %s)" ('path', 'offset', 'buffer_length', 'buffer_hash'))
+    "call": ("INSERT INTO func_calls (call, kwargs, retval) VALUES (%s, %s, %s, %s, %s)",
+             ('_call', 'kwargs', 'retval')),
+    "read": ("INSERT INTO reads (path, length, offset, buffer_length, buffer_hash) VALUES (%s, %s, %s, %s, %s)",
+             ('path', 'length', 'offset', 'buffer_length', 'buffer_hash')),
+    "write": ("INSERT INTO writes (path, offset, buffer_length, buffer_hash) VALUES (%s, %s, %s, %s)",
+              ('path', 'offset', 'buffer_length', 'buffer_hash'))
 }
 
 def log_init(logfnm, logdb):
-    global LOGFILE
-    global LOGDB
+    global LOG_FILE
+    global LOG_DB
     if logfnm:
         if not os.path.exists(logfnm):
             LOGFILE = open(logfnm, 'w')
         else:
             LOGFILE = open(logfnm, 'a')
+    LOG_FILE.write("\n\n########################\n# Starting run at %s\n#########################\n\n" % time.time())
 
     if logdb:
         conn = sqlite3.connect(logdb)
-        LOGDB = conn.cursor()
+        LOG_DB = conn.cursor()
         for table in TABLES:
             LOGDB.execute(table)
 
 
-def log(call, message):
-    if not call in LOGCALLS:
+def log(info):
+    if not info['call'] in LOGCALLS:
         return
-    if LOGFILE:
-        LOGFILE.write("%s: %s\n" % (call, message))
+    kwargs = {k: str(v)[:500] for k, v in info.iteritems() if k[0] != '_'}
+    if LOG_FILE:
+        LOG_FILE.write("%s: state: %s:   %s\n" % (info['_call'], info['_state'], json.dumps(kwargs)))
+    if LOG_DB:
+        if LOG_ALL:
+            LOGDB.execute(LOGGERS['call'], (info[i], json.dumps(kwargs), json.dumps(info.get('buf'))))
+        if info['_call'] in LOG_CALLS:
+            info['_buffer_length'] = len(buf)
+            info['_buffer_hash'] = sha256(buf).hexdigest()
+            query, args = LOG_CALLS[info['_call']]
+            LOG_DB.execute(query, (info[i] for i in args))
 
-def logdb(call, info):
-    def run_query():
-        if not call in LOGGERS:
-            return
-        query, args = LOGGERS.get(call)
-        LOGDB.execute(query, (info[i] for i in args))
-
-    info['call'] = call
-    info['buffer_length'] = len(buf)
-    info['buffer_hash'] = sha256(buf).hexdigest()
-    if LOG_ALL:
-        info['retval'] = info.get('buf')
-        LOGDB.execute(LOGGERS['call'], {k: str(v) for k, v in info.iteritems()})
-    run_query()
-
-def logwrapper(func):
+def logs(func):
     def wrapper(*args, **kwargs):
         info = dict(zip(func.__code__.co_varnames, args))
         info.update(kwargs)
-        log(call, "args, kwargs %s, %s" % (args, kwargs))
+        info['_call'] = func.__name__
+        info['_state'] = 'pre-run'
         try:
+            log(info)
             res = func(*args, **kwargs)
             info['buf'] = marshal.dumps(res)
-            log(call, "yielded %s" % (res))
-            logdb(call, info)
+            info['_state'] = 'post-run'
+            log(info)
+            return res
         except Exception as e:
-            log(call, "raised %s" % e)
-            info['buf']: str(e).encode('utf8')
-            logdb(call, info)
-        return res
+            info['_state'] = 'error'
+            info['buf'] = str(e).encode('utf8')
+            log(info)
+            raise
     return wrapper
 
 
@@ -122,30 +124,30 @@ class Passthrough(Operations):
     # Filesystem methods
     # ==================
 
-    @logwrapper
+    @logs
     def access(self, path, mode):
         full_path = self._full_path(path)
         if not os.access(full_path, mode):
             raise FuseOSError(errno.EACCES)
 
-    @logwrapper
+    @logs
     def chmod(self, path, mode):
         full_path = self._full_path(path)
         return os.chmod(full_path, mode)
 
-    @logwrapper
+    @logs
     def chown(self, path, uid, gid):
         full_path = self._full_path(path)
         return os.chown(full_path, uid, gid)
 
-    @logwrapper
+    @logs
     def getattr(self, path, fh=None):
         full_path = self._full_path(path)
         st = os.lstat(full_path)
         return dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime',
                      'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid'))
 
-    @logwrapper
+    @logs
     def readdir(self, path, fh):
         full_path = self._full_path(path)
 
@@ -155,7 +157,7 @@ class Passthrough(Operations):
         for r in dirents:
             yield r
 
-    @logwrapper
+    @logs
     def readlink(self, path):
         pathname = os.readlink(self._full_path(path))
         if pathname.startswith("/"):
@@ -164,20 +166,20 @@ class Passthrough(Operations):
         else:
             return pathname
 
-    @logwrapper
+    @logs
     def mknod(self, path, mode, dev):
         return os.mknod(self._full_path(path), mode, dev)
 
-    @logwrapper
+    @logs
     def rmdir(self, path):
         full_path = self._full_path(path)
         return os.rmdir(full_path)
 
-    @logwrapper
+    @logs
     def mkdir(self, path, mode):
         return os.mkdir(self._full_path(path), mode)
 
-    @logwrapper
+    @logs
     def statfs(self, path):
         full_path = self._full_path(path)
         stv = os.statvfs(full_path)
@@ -185,64 +187,64 @@ class Passthrough(Operations):
             'f_blocks', 'f_bsize', 'f_favail', 'f_ffree', 'f_files', 'f_flag',
             'f_frsize', 'f_namemax'))
 
-    @logwrapper
+    @logs
     def unlink(self, path):
         return os.unlink(self._full_path(path))
 
-    @logwrapper
+    @logs
     def symlink(self, name, target):
         return os.symlink(name, self._full_path(target))
 
-    @logwrapper
+    @logs
     def rename(self, old, new):
         return os.rename(self._full_path(old), self._full_path(new))
 
-    @logwrapper
+    @logs
     def link(self, target, name):
         return os.link(self._full_path(target), self._full_path(name))
 
-    @logwrapper
+    @logs
     def utimens(self, path, times=None):
         return os.utime(self._full_path(path), times)
 
     # File methods
     # ============
 
-    @logwrapper
+    @logs
     def open(self, path, flags):
         full_path = self._full_path(path)
         return os.open(full_path, flags)
 
-    @logwrapper
+    @logs
     def create(self, path, mode, fi=None):
         full_path = self._full_path(path)
         return os.open(full_path, os.O_WRONLY | os.O_CREAT, mode)
 
-    @logwrapper
+    @logs
     def read(self, path, length, offset, fh):
         os.lseek(fh, offset, os.SEEK_SET)
         return os.read(fh, length)
 
-    @logwrapper
+    @logs
     def write(self, path, buf, offset, fh):
         os.lseek(fh, offset, os.SEEK_SET)
         return os.write(fh, buf)
 
-    @logwrapper
+    @logs
     def truncate(self, path, length, fh=None):
         full_path = self._full_path(path)
         with open(full_path, 'r+') as f:
             f.truncate(length)
 
-    @logwrapper
+    @logs
     def flush(self, path, fh):
         return os.fsync(fh)
 
-    @logwrapper
+    @logs
     def release(self, path, fh):
         return os.close(fh)
 
-    @logwrapper
+    @logs
     def fsync(self, path, fdatasync, fh):
         return self.flush(path, fh)
 
@@ -255,9 +257,15 @@ if __name__ == '__main__':
     argp = argparse.ArgumentParser()
     argp.add_argument('-m', '--mountpoint', help="Mountpoint to use")
     argp.add_argument('-r', '--root', help="Root to mount at mountpoint")
-    argp.add_argument('-l', '--logfile', help="Logfile to use.")
-    argp.add_argument('-d', '--logdb', help="Log to an sqlite DB instead")
-    argp.add_argument('-a', '--logall', help="Log everything (DO NOT USE)")
-    argp.add_argument('-c', '--calllog', action='append', help="Use multiple to log only these calls (read, write, etc)")
+    argp.add_argument('-l', '--log_file', default=None, help="Logfile to use.")
+    argp.add_argument('-d', '--log_db', default=None, help="Log to an sqlite DB instead")
+    argp.add_argument('-a', '--log_all', action="store_true", help="Log everything (DO NOT USE)")
+    argp.add_argument('-c', '--call_log', action='append', help="Use to log only these calls (read, write, etc)")
 
-    main(sys.argv[2], sys.argv[1])
+    args = argp.parse(sys.argv[1:])
+    for call in argp.call_log:
+        LOG_CALLS.add(call)
+    LOG_ALL = bool(args.log_all)
+    log_init(args.log_file, args.log_db)
+
+    main(args.mountpoint, args.root)
