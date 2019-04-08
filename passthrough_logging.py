@@ -2,32 +2,112 @@
 
 from __future__ import with_statement
 
+import argparse
 import os
 import sys
 import errno
+import sqlite3
+import marshal
+import json
+from hashlib import sha256
 
 from fuse import FUSE, FuseOSError, Operations
 
 LOGFILE = None
+LOGDB = None
+LOG_CALLS = set()
+LOG_ALL = False
 
-def log(message):
+TABLES = [
+"""CREATE TABLE IF NOT EXISTS func_calls (
+       id BIGINT UNSIGNED NOT NULL AUTOINCREMENT,
+       call CHAR(20) NOT NULL,
+       kwargs TEXT NOT NULL,
+       retval TEXT NOT NULL
+       PRIMARY KEY (id)
+)""",
+"""CREATE TABLE IF NOT EXISTS reads (
+    id BIGINT UNSIGNED NOT NULL AUTOINCREMENT,
+    path CHAR(100) NOT NULL,
+    length INT NOT NULL,
+    offset INT NOT NULL,
+    buffer_length INT,
+    buffer_hash CHAR(64),
+    PRIMARY KEY (id)
+""",
+"""CREATE TABLE IF NOT EXISTS writes (
+    id BIGINT UNSIGNED NOT NULL AUTOINCREMENT,
+    path CHAR(100) NOT NULL,
+    offset INT NOT NULL,
+    buffer_length INT NOT NULL,
+    buffer_hash CHAR(64) NOT NULL,
+    PRIMARY KEY (id)
+"""
+]
+     
+
+LOGGERS = {
+    "call": ("INSERT INTO func_calls (call, args, kwargs, retval) VALUES (%s, %s, %s, %s, %s)", ('ts', 'call', 'args, 'kwargs', 'retval')),
+    "read": ("INSERT INTO reads (path, length, offset, buffer_length, buffer_hash) VALUES (%s, %s, %s, %s, %s)", ('path, 'length', 'offset', 'buffer_length', 'buffer_hash')),
+    "write": ("INSERT INTO writes (path, offset, buffer_length, buffer_hash) VALUES (%s, %s, %s, %s)" ('path', 'offset', 'buffer_length', 'buffer_hash'))
+}
+
+def log_init(logfnm, logdb):
     global LOGFILE
-    if not LOGFILE:
-        LOGFILE = open('/var/log/fuse.log', 'a')
-    LOGFILE.write(message)
+    global LOGDB
+    if logfnm:
+        if not os.path.exists(logfnm):
+            LOGFILE = open(logfnm, 'w')
+        else:
+            LOGFILE = open(logfnm, 'a')
 
+    if logdb:
+        conn = sqlite3.connect(logdb)
+        LOGDB = conn.cursor()
+        for table in TABLES:
+            LOGDB.execute(table)
+
+
+def log(call, message):
+    if not call in LOGCALLS:
+        return
+    if LOGFILE:
+        LOGFILE.write("%s: %s\n" % (call, message))
+
+def logdb(call, info):
+    def run_query():
+        if not call in LOGGERS:
+            return
+        query, args = LOGGERS.get(call)
+        LOGDB.execute(query, (info[i] for i in args))
+
+    info['call'] = call
+    info['buffer_length'] = len(buf)
+    info['buffer_hash'] = sha256(buf).hexdigest()
+    if LOG_ALL:
+        info['retval'] = info.get('buf')
+        LOGDB.execute(LOGGERS['call'], {k: str(v) for k, v in info.iteritems()})
+    run_query()
 
 def logwrapper(func):
     def wrapper(*args, **kwargs):
-        log("Calling func %s with args, kwargs %s, %s\n" % (func.__name__, args, kwargs))
-        res = func(*args, **kwargs)
-        log("Calling func %s yielded %s\n" % (func.__name__, res))
+        info = dict(zip(func.__code__.co_varnames, args))
+        info.update(kwargs)
+        log(call, "args, kwargs %s, %s" % (args, kwargs))
+        try:
+            res = func(*args, **kwargs)
+            info['buf'] = marshal.dumps(res)
+            log(call, "yielded %s" % (res))
+            logdb(call, info)
+        except Exception as e:
+            log(call, "raised %s" % e)
+            info['buf']: str(e).encode('utf8')
+            logdb(call, info)
         return res
     return wrapper
 
 
 class Passthrough(Operations):
-    @logwrapper
     def __init__(self, root):
         self.root = root
 
@@ -171,4 +251,13 @@ def main(mountpoint, root):
     FUSE(Passthrough(root), mountpoint, nothreads=True, foreground=True)
 
 if __name__ == '__main__':
+    import argparse
+    argp = argparse.ArgumentParser()
+    argp.add_argument('-m', '--mountpoint', help="Mountpoint to use")
+    argp.add_argument('-r', '--root', help="Root to mount at mountpoint")
+    argp.add_argument('-l', '--logfile', help="Logfile to use.")
+    argp.add_argument('-d', '--logdb', help="Log to an sqlite DB instead")
+    argp.add_argument('-a', '--logall', help="Log everything (DO NOT USE)")
+    argp.add_argument('-c', '--calllog', action='append', help="Use multiple to log only these calls (read, write, etc)")
+
     main(sys.argv[2], sys.argv[1])
