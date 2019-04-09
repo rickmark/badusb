@@ -47,7 +47,7 @@ TABLES = [
 ]
      
 
-LOGGERS = {ccccccigbuhttektruirctnbkicefrenuvrecfnhfvtb
+LOGGERS = {
 
     "call": ("INSERT INTO func_calls (call, kwargs, retval) VALUES (%s, %s, %s, %s, %s)",
              ('_call', 'kwargs', 'retval')),
