@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 from __future__ import with_statement
 
@@ -255,18 +255,18 @@ def main(mount_point, root):
 
 
 if __name__ == '__main__':
-    argp = argparse.ArgumentParser()
-    argp.add_argument('-m', '--mountpoint', help="Mountpoint to use")
-    argp.add_argument('-r', '--root', help="Root to mount at mountpoint")
+    argp = argparse.ArgumentParser(description="Perform logging of mass storage operations")
+    argp.add_argument('-m', '--mount_point', help="Mount point to use")
+    argp.add_argument('-r', '--root', help="Root to mount at mount point")
     argp.add_argument('-l', '--log_file', default=None, help="Logfile to use.")
     argp.add_argument('-d', '--log_db', default=None, help="Log to an sqlite DB instead")
     argp.add_argument('-a', '--log_all', action="store_true", help="Log everything (DO NOT USE)")
     argp.add_argument('-c', '--call_log', action='append', help="Use to log only these calls (read, write, etc)")
 
-    args = argp.parse(sys.argv[1:])
+    args = argp.parse_args()
     for call in argp.call_log:
         LOG_CALLS.add(call)
     LOG_ALL = bool(args.log_all)
     log_init(args.log_file, args.log_db)
 
-    main(args.mountpoint, args.root)
+    main(args.mount_point, args.root)
