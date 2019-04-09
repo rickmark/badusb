@@ -66,11 +66,11 @@ def log_init(logfnm, logdb):
 
     if logdb:
         conn = sqlite3.connect(logdb)
-        LOG_DB = conn.cursor()
+        LOG_DB = (conn, conn.cursor())
         for table in TABLES:
             print("Creating table %s" % table)
-            LOG_DB.execute(table)
-
+            LOG_DB[1].execute(table)
+        LOG_DB[0].commit()
 
 def log(info):
     if not LOG_ALL and info['_call'] not in LOG_CALLS:
@@ -86,7 +86,8 @@ def log(info):
             info['_buffer_hash'] = sha256(info.get('buf', b'')).hexdigest()
             info['_hexbuf'] = info.get('buf', b'').hex()
             query, args = LOGGERS[info['_call']]
-            LOG_DB.execute(query, tuple(info[i] for i in args))
+            LOG_DB[1].execute(query, tuple(info[i] for i in args))
+        LOG_DB[0].commit()
 
 def logs(func):
     def wrapper(*args, **kwargs):
