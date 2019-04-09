@@ -48,7 +48,6 @@ TABLES = [
      
 
 LOGGERS = {
-<<<<<<< HEAD
     "call": ("INSERT INTO func_calls (call, kwargs, retval) VALUES (%s, %s, %s, %s, %s)",
              ('_call', 'kwargs', 'retval')),
     "read": ("INSERT INTO reads (path, length, offset, buffer_length, buffer_hash) VALUES (%s, %s, %s, %s, %s)",
