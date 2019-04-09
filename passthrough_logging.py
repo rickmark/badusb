@@ -7,9 +7,9 @@ import os
 import sys
 import errno
 import sqlite3
-import marshal
 import json
 import time
+import types
 from hashlib import sha256
 
 from fuse import FUSE, FuseOSError, Operations
@@ -20,40 +20,36 @@ LOG_CALLS = set()
 LOG_ALL = False
 
 TABLES = [
-"""CREATE TABLE IF NOT EXISTS func_calls (
-       id BIGINT UNSIGNED NOT NULL AUTOINCREMENT,
+"""CREATE TABLE IF NOT EXISTS func_calls(
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
        call CHAR(20) NOT NULL,
        kwargs TEXT NOT NULL,
        retval TEXT NOT NULL
-       PRIMARY KEY (id)
 )""",
-"""CREATE TABLE IF NOT EXISTS reads (
-    id BIGINT UNSIGNED NOT NULL AUTOINCREMENT,
-    path CHAR(100) NOT NULL,
+"""CREATE TABLE IF NOT EXISTS reads(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path CHAR(200) NOT NULL,
     length INT NOT NULL,
     offset INT NOT NULL,
-    buffer_length INT,
-    buffer_hash CHAR(64),
-    PRIMARY KEY (id)
-""",
-"""CREATE TABLE IF NOT EXISTS writes (
-    id BIGINT UNSIGNED NOT NULL AUTOINCREMENT,
-    path CHAR(100) NOT NULL,
+    data TEXT NOT NULL
+)""",
+"""CREATE TABLE IF NOT EXISTS writes(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path CHAR(200) NOT NULL,
     offset INT NOT NULL,
     buffer_length INT NOT NULL,
-    buffer_hash CHAR(64) NOT NULL,
-    PRIMARY KEY (id)
-"""
+    buffer_hash CHAR(64) NOT NULL
+)"""
 ]
      
 
 LOGGERS = {
-    "call": ("INSERT INTO func_calls (call, kwargs, retval) VALUES (%s, %s, %s, %s, %s)",
-             ('_call', 'kwargs', 'retval')),
-    "read": ("INSERT INTO reads (path, length, offset, buffer_length, buffer_hash) VALUES (%s, %s, %s, %s, %s)",
-             ('path', 'length', 'offset', 'buffer_length', 'buffer_hash')),
-    "write": ("INSERT INTO writes (path, offset, buffer_length, buffer_hash) VALUES (%s, %s, %s, %s)",
-              ('path', 'offset', 'buffer_length', 'buffer_hash'))
+    "call": ("INSERT INTO func_calls (call, kwargs, retval) VALUES (?, ?, ?)",
+             ('_call', 'kwargs', '_retval')),
+    "read": ("INSERT INTO reads (path, length, offset, data) VALUES (?, ?, ?, ?)",
+             ('path', 'length', 'offset', '_hexbuf')),
+    "write": ("INSERT INTO writes (path, offset, buffer_length, buffer_hash) VALUES (?, ?, ?, ?)",
+              ('path', 'offset', '_buffer_length', '_buffer_hash'))
 }
 
 
@@ -65,29 +61,32 @@ def log_init(logfnm, logdb):
             LOG_FILE = open(logfnm, 'w')
         else:
             LOG_FILE = open(logfnm, 'a')
-    LOG_FILE.write("\n\n########################\n# Starting run at %s\n#########################\n\n" % time.time())
+        LOG_FILE.write("\n\n########################\n"
+                       "# Starting run at %s\n#########################\n\n" % time.time())
 
     if logdb:
         conn = sqlite3.connect(logdb)
         LOG_DB = conn.cursor()
         for table in TABLES:
+            print("Creating table %s" % table)
             LOG_DB.execute(table)
 
 
 def log(info):
-    if not info['call'] in LOGCALLS:
+    if not LOG_ALL and info['_call'] not in LOG_CALLS:
         return
-    kwargs = {k: str(v)[:500] for k, v in info.iteritems() if k[0] != '_'}
+    kwargs = {k: str(v)[:500] for k, v in info.items() if k[0] != '_'}
     if LOG_FILE:
         LOG_FILE.write("%s: state: %s:   %s\n" % (info['_call'], info['_state'], json.dumps(kwargs)))
     if LOG_DB:
         if LOG_ALL:
             LOGDB.execute(LOGGERS['call'], (info[i], json.dumps(kwargs), json.dumps(info.get('buf'))))
         if info['_call'] in LOG_CALLS:
-            info['_buffer_length'] = len(buf)
-            info['_buffer_hash'] = sha256(buf).hexdigest()
-            query, args = LOG_CALLS[info['_call']]
-            LOG_DB.execute(query, (info[i] for i in args))
+            info['_buffer_length'] = len(info.get('buf', b''))
+            info['_buffer_hash'] = sha256(info.get('buf', b'')).hexdigest()
+            info['_hexbuf'] = info.get('buf', b'').hex()
+            query, args = LOGGERS[info['_call']]
+            LOG_DB.execute(query, tuple(info[i] for i in args))
 
 def logs(func):
     def wrapper(*args, **kwargs):
@@ -98,7 +97,16 @@ def logs(func):
         try:
             log(info)
             res = func(*args, **kwargs)
-            info['buf'] = marshal.dumps(res)
+            if isinstance(res, bytes):
+                info['buf'] = res
+            elif isinstance(res, str):
+                info['buf'] = res.encode('utf8')
+            elif isinstance(res, types.GeneratorType):
+                _res = [i for i in res]
+                res = iter(_res)
+                info['buf'] = str(_res).encode('utf8')
+            else:
+                info['buf'] = str(res).encode('utf8')
             info['_state'] = 'post-run'
             log(info)
             return res
@@ -264,7 +272,7 @@ if __name__ == '__main__':
     argp.add_argument('-c', '--call_log', action='append', help="Use to log only these calls (read, write, etc)")
 
     args = argp.parse_args()
-    for call in argp.call_log:
+    for call in args.call_log:
         LOG_CALLS.add(call)
     LOG_ALL = bool(args.log_all)
     log_init(args.log_file, args.log_db)
