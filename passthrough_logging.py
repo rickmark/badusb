@@ -48,7 +48,6 @@ TABLES = [
      
 
 LOGGERS = {
-<<<<<<< HEAD
     "call": ("INSERT INTO func_calls (call, kwargs, retval) VALUES (%s, %s, %s, %s, %s)",
              ('_call', 'kwargs', 'retval')),
     "read": ("INSERT INTO reads (path, length, offset, buffer_length, buffer_hash) VALUES (%s, %s, %s, %s, %s)",
@@ -65,7 +64,7 @@ def log_init(logfnm, logdb):
         if not os.path.exists(logfnm):
             LOG_FILE = open(logfnm, 'w')
         else:
-            LOGFILE = open(logfnm, 'a')
+            LOG_FILE = open(logfnm, 'a')
     LOG_FILE.write("\n\n########################\n# Starting run at %s\n#########################\n\n" % time.time())
 
     if logdb:
