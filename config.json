@@ -1,0 +1,87 @@
+{
+    "db": {
+        "queries": {
+            "write": [
+                {
+                    "query": "INSERT INTO writes (path, offset, buffer_length, buffer_hash, data) VALUES (?, ?, ?, ?, ?)",
+                    "args": [
+                        "path",
+                        "offset",
+                        "_buffer_length",
+                        "_buffer_hash",
+                        "_buffer"
+                    ]
+                }
+            ],
+            "read": [
+                {
+                    "query": "INSERT INTO reads (path, length, offset, buffer_length, buffer_hash, data) VALUES (?, ?, ?, ?, ?, ?)",
+                    "args": [
+                        "path",
+                        "length",
+                        "offset",
+                        "_buffer_length",
+                        "_buffer_hash",
+                        "_buffer"
+                    ]
+                },
+                {
+                    "query": "INSERT INTO read_counts (key, count) VALUES (?, 1) ON CONFLICT(key) DO UPDATE SET count=count+1",
+                    "args": [
+                        "_composite_key"
+                    ]
+                }
+            ],
+            "call": [
+                 {
+                    "query": "INSERT INTO func_calls (call, kwargs, retval) VALUES (?, ?, ?)",
+                    "args": [
+                        "_call",
+                        "kwargs",
+                        "_retval"
+                    ]
+                }
+            ]
+        },
+        "table_creates": [
+            "CREATE TABLE IF NOT EXISTS func_calls(\n       id INTEGER PRIMARY KEY AUTOINCREMENT,\n       call CHAR(20) NOT NULL,\n       kwargs TEXT NOT NULL,\n       retval TEXT NOT NULL\n)",
+            "CREATE TABLE IF NOT EXISTS reads(\n    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    path CHAR(200) NOT NULL,\n    length INT NOT NULL,\n    offset INT NOT NULL,\n    buffer_length INT NOT NULL,\n    buffer_hash CHAR(64) NOT NULL,\n    data BLOB NOT NULL\n)",
+            "CREATE TABLE IF NOT EXISTS read_counts(\n    key INTEGER PRIMARY KEY, count INTEGER NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS writes(\n    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    path CHAR(200) NOT NULL,\n    offset INT NOT NULL,\n    buffer_length INT NOT NULL,\n    buffer_hash CHAR(64) NOT NULL,\n    data BLOB NOT NULL\n)"
+        ]
+    },
+    "replace": {
+        "2473398572": {
+            "replace": {
+                "value": "hi i was here",
+                "source": "conf"
+            },
+            "trigger": {
+                "type": "read_count",
+                "value": 1
+            }
+        },
+        "263266208": {
+            "replace": {
+                "filename": "../qcow2_image",
+                "source": "cow"
+            },
+            "trigger": {
+                "type": "read_count",
+                "value": 1
+            }
+        },
+        "263262208": {
+            "replace": {
+                "filename": "modifiers/zeroes",
+                "length": 2048,
+                "start": 0,
+                "source": "file"
+            },
+            "trigger": {
+                "type": "read_count",
+                "value": 1
+            }
+        }
+    }
+}

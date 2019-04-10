@@ -4,145 +4,11 @@ from __future__ import with_statement
 
 import argparse
 import os
-import sys
 import errno
-import sqlite3
-import json
-import time
-import types
-from hashlib import sha256
 
 from fuse import FUSE, FuseOSError, Operations
 
-LOG_FILE = None
-LOG_DB = None
-LOG_CALLS = set()
-LOG_ALL = False
-LOG_BYTES = False
-LOG_HASH = False
-
-TABLES = [
-"""CREATE TABLE IF NOT EXISTS func_calls(
-       id INTEGER PRIMARY KEY AUTOINCREMENT,
-       call CHAR(20) NOT NULL,
-       kwargs TEXT NOT NULL,
-       retval TEXT NOT NULL
-)""",
-"""CREATE TABLE IF NOT EXISTS reads(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    path CHAR(200) NOT NULL,
-    length INT NOT NULL,
-    offset INT NOT NULL,
-    buffer_length INT NOT NULL,
-    buffer_hash CHAR(64) NOT NULL,
-    data BLOB NOT NULL
-)""",
-"""CREATE TABLE IF NOT EXISTS writes(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    path CHAR(200) NOT NULL,
-    offset INT NOT NULL,
-    buffer_length INT NOT NULL,
-    buffer_hash CHAR(64) NOT NULL,
-    data BLOB NOT NULL
-)"""
-]
-     
-
-LOGGERS = {
-    "call": ("INSERT INTO func_calls (call, kwargs, retval) VALUES (?, ?, ?)",
-             ('_call', 'kwargs', '_retval')),
-    "read": ("INSERT INTO reads (path, length, offset, buffer_length, buffer_hash, data) VALUES (?, ?, ?, ?, ?, ?)",
-             ('path', 'length', 'offset', '_buffer_length', '_buffer_hash', '_buffer')),
-    "write": ("INSERT INTO writes (path, offset, buffer_length, buffer_hash, data) VALUES (?, ?, ?, ?, ?)",
-              ('path', 'offset', '_buffer_length', '_buffer_hash', '_buffer'))
-}
-
-class Blob:
-    """Automatically encode a binary string."""
-    def __init__(self, s):
-        self.s = s
-
-    @property
-    def blob(self):
-        return sqlite3.Binary(self.s if LOG_BYTES else b'')
-
-    @property
-    def length(self):
-        return len(self.s)
-
-    @property
-    def sha256(self):
-        return sha256(self.s).hexdigest() if (self.s and LOG_HASH) else b''
-
-
-def log_init(logfnm, logdb):
-    global LOG_FILE
-    global LOG_DB
-    if logfnm:
-        if not os.path.exists(logfnm):
-            LOG_FILE = open(logfnm, 'w')
-        else:
-            LOG_FILE = open(logfnm, 'a')
-        LOG_FILE.write("\n\n########################\n"
-                       "# Starting run at %s\n#########################\n\n" % time.time())
-
-    if logdb:
-        conn = sqlite3.connect(logdb)
-        LOG_DB = (conn, conn.cursor())
-        for table in TABLES:
-            print("Creating table %s" % table)
-            LOG_DB[1].execute(table)
-        LOG_DB[0].commit()
-
-def log(info):
-    if not LOG_ALL and info['_call'] not in LOG_CALLS:
-        return
-    kwargs = {k: str(v)[:500] for k, v in info.items() if k[0] != '_'}
-    if LOG_FILE:
-        LOG_FILE.write("%s: state: %s:   %s\n" % (info['_call'], info['_state'], json.dumps(kwargs)))
-    if LOG_DB:
-        if LOG_ALL:
-            LOGDB.execute(LOGGERS['call'], (info[i], json.dumps(kwargs), json.dumps(info.get('buf'))))
-        if info['_call'] in LOG_CALLS:
-            info['_buffer_length'] = info['_buf'].length
-            info['_buffer_hash'] = info['_buf'].sha256
-            info['_buffer'] = info['_buf'].blob
-            query, args = LOGGERS[info['_call']]
-            LOG_DB[1].execute(query, tuple(info[i] for i in args))
-        LOG_DB[0].commit()
-
-def logs(func):
-    def wrapper(*args, **kwargs):
-        info = dict(zip(func.__code__.co_varnames, args))
-        info.update(kwargs)
-        info['_call'] = func.__name__
-        info['_state'] = 'pre-run'
-        info['_buf'] = Blob(b'')
-        try:
-            res = func(*args, **kwargs)
-            if info.get('buf'):
-                buf = info['buf']
-            elif isinstance(res, bytes):
-                buf = res
-            elif isinstance(res, str):
-                buf = res.encode('utf8')
-            elif isinstance(res, types.GeneratorType):
-                _res = [i for i in res]
-                res = iter(_res)
-                buf = str(_res).encode('utf8')
-            else:
-                buf = str(res).encode('utf8')
-            info['_buf'] = Blob(buf)
-            info['_state'] = 'post-run'
-            log(info)
-            return res
-        except Exception as e:
-            info['_state'] = 'error'
-            info['buf'] = str(e).encode('utf8')
-            log(info)
-            raise
-    return wrapper
-
+from logger import logs, init_logging
 
 class Passthrough(Operations):
     def __init__(self, root):
@@ -295,17 +161,13 @@ if __name__ == '__main__':
     argp.add_argument('-l', '--log_file', default=None, help="Logfile to use.")
     argp.add_argument('-d', '--log_db', default=None, help="Log to an sqlite DB instead")
     argp.add_argument('-a', '--log_all', action="store_true", help="Log everything (DO NOT USE)")
-    argp.add_argument('-c', '--call_log', action='append', help="Use to log only these calls (read, write, etc)")
+    argp.add_argument('-c', '--call_log', default=['write', 'read'], action='append',
+                       help="Use to log only these calls (read, write, etc)")
     argp.add_argument('--log_hash', action="store_true", help="Store a hash of read and write buffers")
-    argp.add_argument('--log_bytes', action="store_true", help="Store the full bytes of read and write buffers as hex")
-
+    argp.add_argument('--log_bytes', action="store_true", help="Store the full bytes of r/w buffers")
+    argp.add_argument('--config', default='config.json', help="Path to a config file")
 
     args = argp.parse_args()
-    for call in args.call_log:
-        LOG_CALLS.add(call)
-    LOG_ALL = bool(args.log_all)
-    LOG_HASH = args.log_hash
-    LOG_BYTES = args.log_bytes
-    log_init(args.log_file, args.log_db)
+    init_logging(args)
 
     main(args.mount_point, args.root)
