@@ -31,14 +31,17 @@ TABLES = [
     path CHAR(200) NOT NULL,
     length INT NOT NULL,
     offset INT NOT NULL,
-    data TEXT NOT NULL
+    buffer_length INT NOT NULL,
+    buffer_hash CHAR(64) NOT NULL,
+    data BLOB NOT NULL
 )""",
 """CREATE TABLE IF NOT EXISTS writes(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     path CHAR(200) NOT NULL,
     offset INT NOT NULL,
     buffer_length INT NOT NULL,
-    buffer_hash CHAR(64) NOT NULL
+    buffer_hash CHAR(64) NOT NULL,
+    data BLOB NOT NULL
 )"""
 ]
      
@@ -46,11 +49,28 @@ TABLES = [
 LOGGERS = {
     "call": ("INSERT INTO func_calls (call, kwargs, retval) VALUES (?, ?, ?)",
              ('_call', 'kwargs', '_retval')),
-    "read": ("INSERT INTO reads (path, length, offset, data) VALUES (?, ?, ?, ?)",
-             ('path', 'length', 'offset', '_hexbuf')),
-    "write": ("INSERT INTO writes (path, offset, buffer_length, buffer_hash) VALUES (?, ?, ?, ?)",
-              ('path', 'offset', '_buffer_length', '_buffer_hash'))
+    "read": ("INSERT INTO reads (path, length, offset, buffer_length, buffer_hash, data) VALUES (?, ?, ?, ?, ?, ?)",
+             ('path', 'length', 'offset', '_buffer_length', '_buffer_hash', '_buffer')),
+    "write": ("INSERT INTO writes (path, offset, buffer_length, buffer_hash, data) VALUES (?, ?, ?, ?, ?)",
+              ('path', 'offset', '_buffer_length', '_buffer_hash', '_buffer'))
 }
+
+class Blob:
+    """Automatically encode a binary string."""
+    def __init__(self, s):
+        self.s = s
+
+    @property
+    def blob(self):
+        return sqlite3.Binary(self.s)
+
+    @property
+    def length(self):
+        return len(self.s)
+
+    @property
+    def sha256(self):
+        return sha256(self.s).hexdigest() if self.s else b''
 
 
 def log_init(logfnm, logdb):
@@ -82,9 +102,9 @@ def log(info):
         if LOG_ALL:
             LOGDB.execute(LOGGERS['call'], (info[i], json.dumps(kwargs), json.dumps(info.get('buf'))))
         if info['_call'] in LOG_CALLS:
-            info['_buffer_length'] = len(info.get('buf', b''))
-            info['_buffer_hash'] = sha256(info.get('buf', b'')).hexdigest()
-            info['_hexbuf'] = info.get('buf', b'').hex()
+            info['_buffer_length'] = info['_buf'].length
+            info['_buffer_hash'] = info['_buf'].sha256
+            info['_buffer'] = info['_buf'].blob
             query, args = LOGGERS[info['_call']]
             LOG_DB[1].execute(query, tuple(info[i] for i in args))
         LOG_DB[0].commit()
@@ -95,19 +115,21 @@ def logs(func):
         info.update(kwargs)
         info['_call'] = func.__name__
         info['_state'] = 'pre-run'
+        info['_buf'] = Blob(b'')
         try:
             log(info)
             res = func(*args, **kwargs)
             if isinstance(res, bytes):
-                info['buf'] = res
+                buf = res
             elif isinstance(res, str):
-                info['buf'] = res.encode('utf8')
+                buf = res.encode('utf8')
             elif isinstance(res, types.GeneratorType):
                 _res = [i for i in res]
                 res = iter(_res)
-                info['buf'] = str(_res).encode('utf8')
+                buf = str(_res).encode('utf8')
             else:
-                info['buf'] = str(res).encode('utf8')
+                buf = str(res).encode('utf8')
+            info['_buf'] = Blob(buf)
             info['_state'] = 'post-run'
             log(info)
             return res
@@ -271,6 +293,8 @@ if __name__ == '__main__':
     argp.add_argument('-d', '--log_db', default=None, help="Log to an sqlite DB instead")
     argp.add_argument('-a', '--log_all', action="store_true", help="Log everything (DO NOT USE)")
     argp.add_argument('-c', '--call_log', action='append', help="Use to log only these calls (read, write, etc)")
+    argp.add_argument('--log_hash', action="store_true", help="Store a hash of read and write buffers")
+    argp.add_argument('--log_bytes', action="store_true", help="Store the full bytes of read and write buffers as hex")
 
     args = argp.parse_args()
     for call in args.call_log:
