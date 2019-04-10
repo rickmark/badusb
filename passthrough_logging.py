@@ -18,6 +18,8 @@ LOG_FILE = None
 LOG_DB = None
 LOG_CALLS = set()
 LOG_ALL = False
+LOG_BYTES = False
+LOG_HASH = False
 
 TABLES = [
 """CREATE TABLE IF NOT EXISTS func_calls(
@@ -62,7 +64,7 @@ class Blob:
 
     @property
     def blob(self):
-        return sqlite3.Binary(self.s)
+        return sqlite3.Binary(self.s if LOG_BYTES else b'')
 
     @property
     def length(self):
@@ -70,7 +72,7 @@ class Blob:
 
     @property
     def sha256(self):
-        return sha256(self.s).hexdigest() if self.s else b''
+        return sha256(self.s).hexdigest() if (self.s and LOG_HASH) else b''
 
 
 def log_init(logfnm, logdb):
@@ -117,9 +119,10 @@ def logs(func):
         info['_state'] = 'pre-run'
         info['_buf'] = Blob(b'')
         try:
-            log(info)
             res = func(*args, **kwargs)
-            if isinstance(res, bytes):
+            if info.get('buf'):
+                buf = info['buf']
+            elif isinstance(res, bytes):
                 buf = res
             elif isinstance(res, str):
                 buf = res.encode('utf8')
@@ -296,10 +299,13 @@ if __name__ == '__main__':
     argp.add_argument('--log_hash', action="store_true", help="Store a hash of read and write buffers")
     argp.add_argument('--log_bytes', action="store_true", help="Store the full bytes of read and write buffers as hex")
 
+
     args = argp.parse_args()
     for call in args.call_log:
         LOG_CALLS.add(call)
     LOG_ALL = bool(args.log_all)
+    LOG_HASH = args.log_hash
+    LOG_BYTES = args.log_bytes
     log_init(args.log_file, args.log_db)
 
     main(args.mount_point, args.root)
