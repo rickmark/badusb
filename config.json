@@ -50,18 +50,22 @@
             "CREATE TABLE IF NOT EXISTS writes(\n    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    path CHAR(200) NOT NULL,\n    offset INT NOT NULL,\n    buffer_length INT NOT NULL,\n    buffer_hash CHAR(64) NOT NULL,\n    data BLOB NOT NULL\n)"
         ]
     },
-    "replace": {
-        "2473398572": {
+    "modifiers": [
+        {
+            "path": "usb.img",
+            "byte": 263267208,
             "replace": {
                 "value": "hi i was here",
-                "source": "conf"
+                "source": "str"
             },
             "trigger": {
                 "type": "read_count",
                 "value": 1
             }
         },
-        "263266208": {
+        {
+            "path": "usb.img",
+            "byte": 263266208,
             "replace": {
                 "filename": "../qcow2_image",
                 "source": "cow"
@@ -71,7 +75,9 @@
                 "value": 1
             }
         },
-        "263262208": {
+        {
+            "path": "usb.img",
+            "byte": 263252208,
             "replace": {
                 "filename": "modifiers/zeroes",
                 "length": 2048,
@@ -83,5 +89,5 @@
                 "value": 1
             }
         }
-    }
+    ]
 }

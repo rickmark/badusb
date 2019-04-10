@@ -9,6 +9,7 @@ import errno
 from fuse import FUSE, FuseOSError, Operations
 
 from logger import logs, init_logging
+from injector import inject, init_injector
 
 class Passthrough(Operations):
     def __init__(self, root):
@@ -124,7 +125,8 @@ class Passthrough(Operations):
     @logs
     def read(self, path, length, offset, fh):
         os.lseek(fh, offset, os.SEEK_SET)
-        return os.read(fh, length)
+        data = os.read(fh, length)
+        return inject(path, length, offset, data)
 
     @logs
     def write(self, path, buf, offset, fh):
