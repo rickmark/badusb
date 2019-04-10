@@ -79,7 +79,7 @@
             "path": "usb.img",
             "byte": 263252208,
             "replace": {
-                "filename": "modifiers/zeroes",
+                "filename": "/dev/zero",
                 "length": 2048,
                 "start": 0,
                 "source": "file"
