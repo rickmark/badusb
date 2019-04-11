@@ -125,8 +125,9 @@ class Passthrough(Operations):
     @logs
     def read(self, path, length, offset, fh):
         os.lseek(fh, offset, os.SEEK_SET)
-        data = os.read(fh, length)
-        return inject(path, length, offset, data)
+        orig_data = os.read(fh, length)
+        new_data = inject(path, length, offset, orig_data)
+        return new_data
 
     @logs
     def write(self, path, buf, offset, fh):
@@ -171,5 +172,6 @@ if __name__ == '__main__':
 
     args = argp.parse_args()
     init_logging(args)
+    init_injector(args)
 
     main(args.mount_point, args.root)

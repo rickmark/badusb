@@ -110,7 +110,7 @@ class DBLogger(object):
             info['_buffer'] = blob.blob
             info['_buffer_length'] = blob.length
             info['_buffer_hash'] = blob.sha256
-            info['_composite_key'] = self.make_composite_key(info['offset'], info['length'])
+            info['_composite_key'] = self.make_composite_key(info['offset'], info.get('length', blob.length))
 
         for query in queries:
             inserts.append((query['query'], tuple(info[i] for i in query['args'])))

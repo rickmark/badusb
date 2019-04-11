@@ -18,7 +18,7 @@ class Inject(object):
     def triggered(self):
         read_count = self.trigger['count']
         self.trigger['count'] += 1
-        return read_count > 0
+        return read_count >= self.trigger['value']
 
     def read(self, offset, length):
         if self.replace['source'] == 'str':
@@ -36,10 +36,15 @@ class Inject(object):
 
     def modify(self, offset, length, data):
         """Modify the data however we're supposed to"""
-        pre = data[:self.byte - offset]
-        injecting = self.read(offset, length)
-        post = data[len(pre) + len(injecting):]
-        return "%s%s%s" % (pre, injecting, post)
+        # Let's say we want to replace bytes 5:10 with aaaaaaaaaaaaaaaaaaaaaaaaaaaa, with offset 0, length 20
+        # pre should give us 0:5, cool
+        # injecting should give us aaaaa..., which we'll want to truncate to 15 bytes (length - len(pre))
+        # Post will be nothing in this case
+        pre = data[:self.byte - offset]                         # if we want to replace
+        injecting = self.read(offset, length)[:length - len(pre)]
+        post = data[len(pre) + len(injecting):length]
+        modified = "%s%s%s" % (pre, injecting, post)
+        return modified
 
 
 class Injector(object):
@@ -79,4 +84,4 @@ def init_injector(args):
 
 
 def inject(path, length, offset, data):
-    INJECTOR.handle(path, length, offset, data)
+    return INJECTOR.handle(path, length, offset, data)
