@@ -10,6 +10,7 @@ from fuse import FUSE, FuseOSError, Operations
 
 from logger import logs, init_logging
 from injector import inject, init_injector
+from gpt import parse_gpt
 
 class Passthrough(Operations):
     def __init__(self, root):
@@ -123,6 +124,7 @@ class Passthrough(Operations):
         return os.open(full_path, os.O_WRONLY | os.O_CREAT, mode)
 
     @logs
+    @parse_gpt
     def read(self, path, length, offset, fh):
         os.lseek(fh, offset, os.SEEK_SET)
         orig_data = os.read(fh, length)
