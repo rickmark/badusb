@@ -53,31 +53,30 @@
     "modifiers": [
         {
             "path": "/testfile.json",
-            "byte": 0,
             "replace": {
                 "value": "hi i was here",
                 "source": "str"
             },
             "trigger": {
-                "type": "read_count",
+                "byte": 0,
+                "type": "byte_read_count",
                 "value": 0
             }
         },
         {
             "path": "usb.img",
-            "byte": 263266208,
             "replace": {
                 "filename": "../qcow2_image",
                 "source": "cow"
             },
             "trigger": {
-                "type": "read_count",
+                "byte": 263266208,
+                "type": "byte_read_count",
                 "value": 1
             }
         },
         {
             "path": "/testfile.json",
-            "byte": 30,
             "replace": {
                 "filename": "/dev/zero",
                 "length": 2048,
@@ -85,8 +84,23 @@
                 "source": "file"
             },
             "trigger": {
-                "type": "read_count",
+                "byte": 30,
+                "type": "byte_read_count",
                 "value": 0
+            }
+        },
+        {
+            "path": "/usb.img",
+            "replace": {
+                "source": "file",
+                "filename": "badusb.img",
+                "start": "offset",
+                "length": "length"
+            },
+            "trigger": {
+                "type": "partition_read_count",
+                "partition": "STATE",
+                "count": 1
             }
         }
     ]
