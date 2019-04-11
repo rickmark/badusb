@@ -44,6 +44,14 @@ def _make_fmt(name, format, extras=[]):
     return (fmt, tupletype)
 
 
+def get_partition(byte):
+    if not READS:
+        return "N/A"
+    for part in READS[-1].values():
+        if part.first_byte <= byte < part.last_byte:
+            return part.name
+    return "N/A"
+
 class GPTError(Exception):
     pass
 
@@ -104,6 +112,7 @@ def read_partitions(fp, header, lba_size=512):
             )
         yield part
 
+
 def parse(data, offset):
     if offset != 0:
         return
@@ -111,7 +120,7 @@ def parse(data, offset):
     header = read_header(fp)
     parts = [i for i in read_partitions(fp, header)]
     READS.append({i.name: i for i in parts})
-    print("Parsed GPT:\n  " + '\n  '.join([("%s: %s" % (k, repr(v))) for k, v in parts]))
+    print("Parsed GPT:\n  " + '\n  '.join([("%s: %s" % (k, repr(v))) for k, v in READS[-1].items()]))
 
 
 def parse_gpt(func):

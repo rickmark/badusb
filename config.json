@@ -15,14 +15,15 @@
             ],
             "read": [
                 {
-                    "query": "INSERT INTO reads (path, length, offset, buffer_length, buffer_hash, data) VALUES (?, ?, ?, ?, ?, ?)",
+                    "query": "INSERT INTO reads (path, length, offset, buffer_length, buffer_hash, data, partition) VALUES (?, ?, ?, ?, ?, ?)",
                     "args": [
                         "path",
                         "length",
                         "offset",
                         "_buffer_length",
                         "_buffer_hash",
-                        "_buffer"
+                        "_buffer",
+                        "_partition"
                     ]
                 },
                 {
@@ -45,7 +46,7 @@
         },
         "table_creates": [
             "CREATE TABLE IF NOT EXISTS func_calls(\n       id INTEGER PRIMARY KEY AUTOINCREMENT,\n       call CHAR(20) NOT NULL,\n       kwargs TEXT NOT NULL,\n       retval TEXT NOT NULL\n)",
-            "CREATE TABLE IF NOT EXISTS reads(\n    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    path CHAR(200) NOT NULL,\n    length INT NOT NULL,\n    offset INT NOT NULL,\n    buffer_length INT NOT NULL,\n    buffer_hash CHAR(64) NOT NULL,\n    data BLOB NOT NULL\n)",
+            "CREATE TABLE IF NOT EXISTS reads(\n    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    path CHAR(200) NOT NULL,\n    partition CHAR(20),\n    length INT NOT NULL,\n    offset INT NOT NULL,\n    buffer_length INT NOT NULL,\n    buffer_hash CHAR(64) NOT NULL,\n    data BLOB NOT NULL\n)",
             "CREATE TABLE IF NOT EXISTS read_counts(\n    key INTEGER PRIMARY KEY, count INTEGER NOT NULL)",
             "CREATE TABLE IF NOT EXISTS writes(\n    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    path CHAR(200) NOT NULL,\n    offset INT NOT NULL,\n    buffer_length INT NOT NULL,\n    buffer_hash CHAR(64) NOT NULL,\n    data BLOB NOT NULL\n)"
         ]

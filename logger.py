@@ -3,10 +3,12 @@ import os
 import sqlite3
 import time
 import types
+import gpt
 
 from hashlib import sha256
 
 LOGGERS = []
+
 
 class Blob:
     """Automatically encode a binary string."""
@@ -30,6 +32,7 @@ class Blob:
 
 class FileLogger(object):
     FILE_PREAMBLE = "\n" + "#"*80 + "# Starting run at %s\n" % time.time() + "#" * 80 + "\n\n"
+
     def __init__(self, log_file=None, log_all=False):
         self.log_file = log_file
         self.logged_calls = set()
@@ -111,6 +114,7 @@ class DBLogger(object):
             info['_buffer_length'] = blob.length
             info['_buffer_hash'] = blob.sha256
             info['_composite_key'] = self.make_composite_key(info['offset'], info.get('length', blob.length))
+            info['_partition'] = gpt.get_partition(info['offset'])
 
         for query in queries:
             inserts.append((query['query'], tuple(info[i] for i in query['args'])))

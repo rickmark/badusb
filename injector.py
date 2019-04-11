@@ -95,12 +95,12 @@ class Injector(object):
         for inject in injections:
             self.add_inject(**inject)
 
-    def add_inject(self, path, key, replace, trigger):
+    def add_inject(self, path, replace, trigger):
         """Add an injection config"""
         if path not in self.injects:
             self.injects[path] = []
         inject_type = INJECT_TYPES.get(trigger['type'])
-        self.injects[path].append(Inject(key, replace, trigger))
+        self.injects[path].append(inject_type(replace, trigger))
 
     def get_injects(self, path, length, offset):
         same_path = self.injects.get(path, [])
