@@ -86,6 +86,11 @@ class Partition(object):
         self.unique = unique
         self.type = type
 
+    @classmethod
+    def from_gpt(cls, part):
+        return cls(name=part.name, flags=part.flags, first_lba=part.first_lba, last_lba=part.last_lba,
+                   unique=part.unique, type=part.type)
+
     def contains_byte(self, idx):
         return (512 * self.first_byte) <= idx < (512 * self.last_byte)
 
@@ -114,12 +119,14 @@ def read_partitions(fp, header, lba_size=512):
 
 
 def parse(data, offset):
+    if offset < (1 << 16):
+        print("GPT parser received %i bytes at offset %i" % (len(data), offset))
     if offset != 0:
         return
     fp = BytesIO(data)
     header = read_header(fp)
     parts = [i for i in read_partitions(fp, header)]
-    READS.append({i.name: i for i in parts})
+    READS.append({i.name: Partition.from_gpt(i) for i in parts})
     print("Parsed GPT:\n  " + '\n  '.join([("%s: %s" % (k, repr(v))) for k, v in READS[-1].items()]))
 
 

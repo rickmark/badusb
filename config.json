@@ -53,53 +53,13 @@
     },
     "modifiers": [
         {
-            "path": "/testfile.json",
+            "path": "DISABLED_/usb.img",
             "replace": {
-                "value": "hi i was here",
-                "source": "str"
+                "source": "partition",
+                "filename": "state.bad.img"
             },
             "trigger": {
-                "byte": 0,
-                "type": "byte_read_count",
-                "value": 0
-            }
-        },
-        {
-            "path": "usb.img",
-            "replace": {
-                "filename": "../qcow2_image",
-                "source": "cow"
-            },
-            "trigger": {
-                "byte": 263266208,
-                "type": "byte_read_count",
-                "value": 1
-            }
-        },
-        {
-            "path": "/testfile.json",
-            "replace": {
-                "filename": "/dev/zero",
-                "length": 2048,
-                "start": 0,
-                "source": "file"
-            },
-            "trigger": {
-                "byte": 30,
-                "type": "byte_read_count",
-                "value": 0
-            }
-        },
-        {
-            "path": "/usb.img",
-            "replace": {
-                "source": "file",
-                "filename": "badusb.img",
-                "start": "offset",
-                "length": "length"
-            },
-            "trigger": {
-                "type": "partition_read_count",
+                "type": "partition_replace",
                 "partition": "STATE",
                 "count": 1
             }

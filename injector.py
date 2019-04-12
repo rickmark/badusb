@@ -21,6 +21,9 @@ class BaseInject(object):
     def byte(self):
         return -1
 
+    def right_byte(self, offset, length):
+        return offset <= self.byte < offset + length
+
     def read(self, offset, length):
         if self.replace['source'] == 'str':
             return self.replace['value']
@@ -37,14 +40,49 @@ class BaseInject(object):
 
     def modify(self, offset, length, data):
         """Modify the data however we're supposed to"""
-        # Let's say we want to replace bytes 5:10 with aaaaaaaaaaaaaaaaaaaaaaaaaaaa, with offset 0, length 20
-        # pre should give us 0:5, cool
-        # injecting should give us aaaaa..., which we'll want to truncate to 15 bytes (length - len(pre))
-        # Post will be nothing in this case
         pre = data[:self.byte - offset]                         # if we want to replace
         injecting = self.read(offset, length)[:length - len(pre)]
         post = data[len(pre) + len(injecting):length]
         modified = "%s%s%s" % (pre, injecting, post)
+        return modified
+
+
+class PartitionReplaceInject(BaseInject):
+    def __init__(self, *args, **kwargs):
+        self.initial_num_gpts = len(gpt.READS)
+        self.part = None
+        super(PartitionReplaceInject, self).__init__(*args, **kwargs)
+
+    @property
+    def gpt(self):
+        if len(gpt.READS) == self.initial_num_gpts:
+            return None
+        else:
+            return gpt.READS[self.initial_num_gpts]
+
+    def right_byte(self, offset, length):
+        if self.gpt:
+            self.part = self.gpt.get(self.trigger('partition'))
+
+        if self.part and self.part.first_byte <= offset < self.part.last_byte:
+            # Increment the counter if we're reading the first byte of the partition
+            if offset <= self.part.first_byte < offset + length:
+                self.trigger['count'] += 1
+            return True
+        else:
+            return False
+
+    @property
+    def triggered(self):
+        return self.trigger['count'] > self.trigger['value']
+
+    def modify(self, offset, length, data):
+        self.replace['start'] = offset - self.part.first_byte
+        with open(self.replace['filename'], 'r') as fh:
+            fh.seek(offset - self.part.first_byte)
+            modified = fh.read(length)
+        if len(modified) < length:
+            modified += data[len(modified):]
         return modified
 
 
@@ -64,26 +102,8 @@ class ByteTriggerInject(BaseInject):
         return self.trigger['byte']
 
 
-class PartitionTriggerInject(ByteTriggerInject):
-    def __init__(self, *args, **kwargs):
-        self.initial_num_gpts = len(gpt.READS)
-        super(PartitionTriggerInject, self).__init__(*args, **kwargs)
-
-    @property
-    def byte(self):
-        if len(gpt.READS) == self.initial_num_gpts:
-            # We haven't read the GPT yet
-            return -1
-        else:
-            part = gpt.READS[self.initial_num_gpts].get(self.trigger['partition'])
-            if not part:
-                return -1
-            # Pick a byte in the middle:
-            return (part.first_byte + part.last_byte) / 2
-
-
 INJECT_TYPES = {
-        "partition_read_count": PartitionTriggerInject,
+        "partition_replace": PartitionReplaceInject,
         "byte_read_count": ByteTriggerInject
     }
 
@@ -106,7 +126,7 @@ class Injector(object):
         same_path = self.injects.get(path, [])
         if not same_path:
             return same_path
-        same_byte = [i for i in same_path if offset <= i.byte < offset+length]
+        same_byte = [i for i in same_path if i.right_byte(offset, length)]
         if not same_byte:
             return same_byte
         return [i for i in same_byte if i.triggered]
@@ -115,6 +135,7 @@ class Injector(object):
         injects = self.get_injects(path, length, offset)
         for inject in injects:
             data = inject.modify(offset, length, data)
+            print("Modifying data using injector %s" % repr(inject))
         return data
 
 

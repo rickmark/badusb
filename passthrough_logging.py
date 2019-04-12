@@ -10,18 +10,29 @@ from fuse import FUSE, FuseOSError, Operations
 
 from logger import logs, init_logging
 from injector import inject, init_injector
-from gpt import parse_gpt
+from gpt import parse_gpt, READS
 
 class Passthrough(Operations):
-    def __init__(self, root):
+    def __init__(self, root, second_root=None, switch_after=1):
         self.root = root
+        self.second_root = second_root
+        self.switch_after = switch_after
+
+        self.initial_gpt_reads = len(READS)
+
+    @property
+    def read_count(self):
+        return len(READS) - self.initial_gpt_reads
 
     # Helpers
     # =======
 
     def _full_path(self, partial):
         partial = partial.lstrip("/")
-        path = os.path.join(self.root, partial)
+        if self.read_count > self.switch_after and self.second_root:
+            path = os.path.join(self.second_root, partial)
+        else:
+            path = os.path.join(self.root, partial)
         return path
 
     # Filesystem methods
@@ -155,13 +166,15 @@ class Passthrough(Operations):
         return self.flush(path, fh)
 
 
-def main(mount_point, root):
-    FUSE(Passthrough(root), mount_point, nothreads=True, foreground=True)
+def main(args):
+    FUSE(Passthrough(args.root, args.second_root, args.num_reads), args.mount_point, nothreads=True, foreground=True)
 
 
 if __name__ == '__main__':
     argp = argparse.ArgumentParser(description="Perform logging of mass storage operations")
     argp.add_argument('-m', '--mount_point', help="Mount point to use")
+    argp.add_argument('-s', '--second_root', default=None, help="Second root to switch to")
+    argp.add_argument('-n', '--num_reads', type=int, default=1, help="Switch to second root after this many reads")
     argp.add_argument('-r', '--root', help="Root to mount at mount point")
     argp.add_argument('-l', '--log_file', default=None, help="Logfile to use.")
     argp.add_argument('-d', '--log_db', default=None, help="Log to an sqlite DB instead")
@@ -176,4 +189,4 @@ if __name__ == '__main__':
     init_logging(args)
     init_injector(args)
 
-    main(args.mount_point, args.root)
+    main(args)
